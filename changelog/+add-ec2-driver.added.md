@@ -1,0 +1,1 @@
+Added the `ec2` cloud driver, extracted from Salt core (removed in Salt 3008 as part of the community modules migration), preserving full functionality for provisioning and managing AWS EC2 instances via `salt-cloud`.

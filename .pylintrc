@@ -651,7 +651,8 @@ additional-builtins=__opts__,
                     __executors__,
                     __events__,
                     __resource__,
-                    __resource_funcs__
+                    __resource_funcs__,
+                    __utils__
 
 # Tells whether unused global variables should be treated as a violation.
 allow-global-unused-variables=yes

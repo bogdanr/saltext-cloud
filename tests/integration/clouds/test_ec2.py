@@ -1,15 +1,27 @@
 """
-    :codeauthor: Nicole Thomas <nicole@saltstack.com>
+:codeauthor: Nicole Thomas <nicole@saltstack.com>
 """
 
+# pylint: disable-all
 import os
 
 import pytest
-import yaml
+
+pytest.skip(
+    "These integration tests were written against Salt core's internal test "
+    "harness (tests.integration.cloud.helpers.cloud_test_base.CloudTest, "
+    "tests.support.win_installer, tests.support.runtests) which is not "
+    "available to Salt extensions. They also require live AWS credentials "
+    "and a running EC2 environment. Porting them to pytest-salt-factories "
+    "is tracked as follow-up work.",
+    allow_module_level=True,
+)
 
 import salt.utils.cloud
 import salt.utils.files
 import salt.utils.yaml
+import yaml
+
 from tests.integration.cloud.helpers.cloud_test_base import CloudTest
 from tests.support import win_installer
 from tests.support.runtests import RUNTIME_VARS
@@ -61,16 +73,12 @@ class EC2Test(CloudTest):
             group_or_subnet = self.provider_config.get("subnetid")
 
         if not group_or_subnet:
-            self.skipTest(
-                f"securitygroup or subnetid missing for {self.PROVIDER} config"
-            )
+            self.skipTest(f"securitygroup or subnetid missing for {self.PROVIDER} config")
 
         super().setUp()
 
     def override_profile_config(self, name, data):
-        conf_path = os.path.join(
-            RUNTIME_VARS.TMP_CONF_DIR, "cloud.profiles.d", "ec2.conf"
-        )
+        conf_path = os.path.join(RUNTIME_VARS.TMP_CONF_DIR, "cloud.profiles.d", "ec2.conf")
         with salt.utils.files.fopen(conf_path, "r") as fp:
             conf = yaml.safe_load(fp)
         conf[name].update(data)
@@ -117,24 +125,17 @@ class EC2Test(CloudTest):
         Tests creating and renaming an instance on EC2 (classic)
         """
         # create the instance
-        ret_val = self.run_cloud(
-            f"-p ec2-test {self.instance_name} --no-deploy", timeout=TIMEOUT
-        )
+        ret_val = self.run_cloud(f"-p ec2-test {self.instance_name} --no-deploy", timeout=TIMEOUT)
         # check if instance returned
         self.assertInstanceExists(ret_val)
 
         changed_name = self.instance_name + "-changed"
 
         rename_result = self.run_cloud(
-            "-a rename {} newname={} --assume-yes".format(
-                self.instance_name, changed_name
-            ),
+            f"-a rename {self.instance_name} newname={changed_name} --assume-yes",
             timeout=TIMEOUT,
         )
-        self.assertFalse(
-            self._instance_exists(),
-            f"Instance wasn't renamed: |\n{rename_result}",
-        )
+        assert not self._instance_exists(), f"Instance wasn't renamed: |\n{rename_result}"
         self.assertInstanceExists(instance_name=changed_name)
 
         self.assertDestroyInstance(changed_name)
@@ -163,9 +164,7 @@ class EC2Test(CloudTest):
         )
         self._test_instance("ec2-win2012r2-test", debug=True)
 
-    @pytest.mark.skipif(
-        not HAS_WINRM, reason="Skip when winrm dependencies are missing"
-    )
+    @pytest.mark.skipif(not HAS_WINRM, reason="Skip when winrm dependencies are missing")
     def test_win2012r2_winrm(self):
         """
         Tests creating and deleting a Windows 2012r2 instance on EC2 using
@@ -199,9 +198,7 @@ class EC2Test(CloudTest):
         )
         self._test_instance("ec2-win2016-test", debug=True)
 
-    @pytest.mark.skipif(
-        not HAS_WINRM, reason="Skip when winrm dependencies are missing"
-    )
+    @pytest.mark.skipif(not HAS_WINRM, reason="Skip when winrm dependencies are missing")
     def test_win2016_winrm(self):
         """
         Tests creating and deleting a Windows 2016 instance on EC2 using winrm
