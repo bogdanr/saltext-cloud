@@ -5007,7 +5007,7 @@ def ssm_create_association(name=None, kwargs=None, instance_id=None, call=None):
     """
     Associates the specified SSM document with the specified instance
 
-    http://docs.aws.amazon.com/ssm/latest/APIReference/API_CreateAssociation.html
+    https://docs.aws.amazon.com/systems-manager/latest/APIReference/API_CreateAssociation.html
 
     CLI Examples:
 
@@ -5061,7 +5061,7 @@ def ssm_describe_association(name=None, kwargs=None, instance_id=None, call=None
     """
     Describes the associations for the specified SSM document or instance.
 
-    http://docs.aws.amazon.com/ssm/latest/APIReference/API_DescribeAssociation.html
+    https://docs.aws.amazon.com/systems-manager/latest/APIReference/API_DescribeAssociation.html
 
     CLI Examples:
 
