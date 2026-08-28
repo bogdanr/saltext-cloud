@@ -77,6 +77,31 @@ To use the EC2 cloud module, set up the cloud configuration at
 :depends: requests
 """
 
+# This module was extracted wholesale from Salt core (salt/cloud/clouds/ec2.py)
+# as part of the community modules migration. The pylint messages below are
+# largely pre-existing style nits in that decade-old codebase; they are
+# suppressed here to keep this extraction a faithful, behavior-preserving
+# port rather than an opportunistic rewrite. Follow-up cleanup PRs are
+# welcome.
+# pylint: disable=too-many-lines
+# pylint: disable=consider-using-from-import
+# pylint: disable=too-many-locals
+# pylint: disable=too-many-branches
+# pylint: disable=too-many-statements
+# pylint: disable=consider-using-f-string
+# pylint: disable=invalid-name
+# pylint: disable=implicit-str-concat
+# pylint: disable=no-else-raise
+# pylint: disable=no-else-return
+# pylint: disable=inconsistent-return-statements
+# pylint: disable=use-dict-literal
+# pylint: disable=consider-using-dict-items
+# pylint: disable=raise-missing-from
+# pylint: disable=consider-merging-isinstance
+# pylint: disable=redefined-builtin
+# pylint: disable=unused-argument
+# pylint: disable=unused-variable
+
 import base64
 import binascii
 import datetime
@@ -94,6 +119,7 @@ import uuid
 import xml.etree.ElementTree as ET
 from functools import cmp_to_key
 
+import requests
 import salt.config as config
 import salt.crypt
 import salt.utils.aws as aws
@@ -106,20 +132,11 @@ import salt.utils.json
 import salt.utils.msgpack
 import salt.utils.stringutils
 import salt.utils.yaml
-from salt.exceptions import (
-    SaltCloudConfigError,
-    SaltCloudException,
-    SaltCloudExecutionFailure,
-    SaltCloudExecutionTimeout,
-    SaltCloudSystemExit,
-)
-
-try:
-    import requests
-
-    HAS_REQUESTS = True
-except ImportError:
-    HAS_REQUESTS = False
+from salt.exceptions import SaltCloudConfigError
+from salt.exceptions import SaltCloudException
+from salt.exceptions import SaltCloudExecutionFailure
+from salt.exceptions import SaltCloudExecutionTimeout
+from salt.exceptions import SaltCloudSystemExit
 
 # Get logging started
 log = logging.getLogger(__name__)
@@ -191,8 +208,8 @@ def get_dependencies():
     Warn if dependencies aren't met.
     """
     deps = {
-        "requests": HAS_REQUESTS,
-        "pycrypto or m2crypto": salt.crypt.HAS_M2 or salt.crypt.HAS_CRYPTO,
+        "requests": True,
+        "cryptography": salt.crypt.HAS_CRYPTOGRAPHY,
     }
     return config.check_driver_dependencies(__virtualname__, deps)
 
@@ -358,9 +375,7 @@ def query(
         )
 
         algorithm = "AWS4-HMAC-SHA256"
-        credential_scope = (
-            datestamp + "/" + region + "/" + service + "/" + "aws4_request"
-        )
+        credential_scope = datestamp + "/" + region + "/" + service + "/" + "aws4_request"
 
         string_to_sign = (
             algorithm
@@ -420,8 +435,7 @@ def query(
             if err_code and err_code in EC2_RETRY_CODES:
                 attempts += 1
                 log.error(
-                    "EC2 Response Status Code and Error: [%s %s] %s; "
-                    "Attempts remaining: %s",
+                    "EC2 Response Status Code and Error: [%s %s] %s; " "Attempts remaining: %s",
                     exc.response.status_code,
                     exc,
                     data,
@@ -937,9 +951,7 @@ def avail_images(kwargs=None, call=None):
     else:
         provider = get_configured_provider()
 
-        owner = config.get_cloud_config_value(
-            "owner", provider, __opts__, default="amazon"
-        )
+        owner = config.get_cloud_config_value("owner", provider, __opts__, default="amazon")
 
     ret = {}
     params = {"Action": "DescribeImages", "Owner": owner}
@@ -964,9 +976,7 @@ def script(vm_):
         config.get_cloud_config_value("script", vm_, __opts__),
         vm_,
         __opts__,
-        salt.utils.cloud.salt_config_to_yaml(
-            salt.utils.cloud.minion_config(__opts__, vm_)
-        ),
+        salt.utils.cloud.salt_config_to_yaml(salt.utils.cloud.minion_config(__opts__, vm_)),
     )
 
 
@@ -981,9 +991,7 @@ def securitygroup(vm_):
     """
     Return the security group
     """
-    return config.get_cloud_config_value(
-        "securitygroup", vm_, __opts__, search_global=False
-    )
+    return config.get_cloud_config_value("securitygroup", vm_, __opts__, search_global=False)
 
 
 def iam_profile(vm_):
@@ -1005,9 +1013,7 @@ def iam_profile(vm_):
     Example: s3access
 
     """
-    return config.get_cloud_config_value(
-        "iam_profile", vm_, __opts__, search_global=False
-    )
+    return config.get_cloud_config_value("iam_profile", vm_, __opts__, search_global=False)
 
 
 def ssh_interface(vm_):
@@ -1075,9 +1081,7 @@ def get_ssh_gateway_config(vm_):
     key_filename = ssh_gateway_config["ssh_gateway_key"]
     if key_filename is not None and not os.path.isfile(key_filename):
         raise SaltCloudConfigError(
-            "The defined ssh_gateway_private_key '{}' does not exist".format(
-                key_filename
-            )
+            f"The defined ssh_gateway_private_key '{key_filename}' does not exist"
         )
     elif key_filename is None and not ssh_gateway_config["ssh_gateway_password"]:
         raise SaltCloudConfigError(
@@ -1141,9 +1145,7 @@ def get_availability_zone(vm_):
     """
     Return the availability zone to use
     """
-    avz = config.get_cloud_config_value(
-        "availability_zone", vm_, __opts__, search_global=False
-    )
+    avz = config.get_cloud_config_value("availability_zone", vm_, __opts__, search_global=False)
 
     if avz is None:
         return None
@@ -1153,17 +1155,13 @@ def get_availability_zone(vm_):
     # Validate user-specified AZ
     if avz not in zones:
         raise SaltCloudException(
-            "The specified availability zone isn't valid in this region: {}\n".format(
-                avz
-            )
+            f"The specified availability zone isn't valid in this region: {avz}\n"
         )
 
     # check specified AZ is available
     elif zones[avz] != "available":
         raise SaltCloudException(
-            "The specified availability zone isn't currently available: {}\n".format(
-                avz
-            )
+            f"The specified availability zone isn't currently available: {avz}\n"
         )
 
     return avz
@@ -1232,9 +1230,7 @@ def _get_subnetname_id(subnetname):
                 tags = [tags]
             for tag in tags:
                 if tag["key"] == "Name" and tag["value"] == subnetname:
-                    log.debug(
-                        "AWS Subnet ID of %s is %s", subnetname, subnet["subnetId"]
-                    )
+                    log.debug("AWS Subnet ID of %s is %s", subnetname, subnet["subnetId"])
                     return subnet["subnetId"]
     return None
 
@@ -1243,15 +1239,11 @@ def get_subnetid(vm_):
     """
     Returns the SubnetId to use
     """
-    subnetid = config.get_cloud_config_value(
-        "subnetid", vm_, __opts__, search_global=False
-    )
+    subnetid = config.get_cloud_config_value("subnetid", vm_, __opts__, search_global=False)
     if subnetid:
         return subnetid
 
-    subnetname = config.get_cloud_config_value(
-        "subnetname", vm_, __opts__, search_global=False
-    )
+    subnetname = config.get_cloud_config_value("subnetname", vm_, __opts__, search_global=False)
     if subnetname:
         return _get_subnetname_id(subnetname)
     return None
@@ -1273,9 +1265,7 @@ def _get_securitygroupname_id(securitygroupname_list):
         sigver="4",
     ):
         if sg["groupName"] in securitygroupname_list:
-            log.debug(
-                "AWS SecurityGroup ID of %s is %s", sg["groupName"], sg["groupId"]
-            )
+            log.debug("AWS SecurityGroup ID of %s is %s", sg["groupName"], sg["groupId"])
             securitygroupid_set.add(sg["groupId"])
     return list(securitygroupid_set)
 
@@ -1310,9 +1300,7 @@ def securitygroupid(vm_):
             sigver="4",
         ):
             if sg["groupName"] in securitygroupname_list:
-                log.debug(
-                    "AWS SecurityGroup ID of %s is %s", sg["groupName"], sg["groupId"]
-                )
+                log.debug("AWS SecurityGroup ID of %s is %s", sg["groupName"], sg["groupId"])
                 securitygroupid_set.add(sg["groupId"])
     return list(securitygroupid_set)
 
@@ -1321,18 +1309,14 @@ def get_placementgroup(vm_):
     """
     Returns the PlacementGroup to use
     """
-    return config.get_cloud_config_value(
-        "placementgroup", vm_, __opts__, search_global=False
-    )
+    return config.get_cloud_config_value("placementgroup", vm_, __opts__, search_global=False)
 
 
 def get_spot_config(vm_):
     """
     Returns the spot instance configuration for the provided vm
     """
-    return config.get_cloud_config_value(
-        "spot_config", vm_, __opts__, search_global=False
-    )
+    return config.get_cloud_config_value("spot_config", vm_, __opts__, search_global=False)
 
 
 def get_provider(vm_=None):
@@ -1381,12 +1365,12 @@ def block_device_mappings(vm_):
 
     .. code-block:: python
 
-        [{'DeviceName': '/dev/sdb', 'VirtualName': 'ephemeral0'},
-          {'DeviceName': '/dev/sdc', 'VirtualName': 'ephemeral1'}]
+        [
+            {"DeviceName": "/dev/sdb", "VirtualName": "ephemeral0"},
+            {"DeviceName": "/dev/sdc", "VirtualName": "ephemeral1"},
+        ]
     """
-    return config.get_cloud_config_value(
-        "block_device_mappings", vm_, __opts__, search_global=True
-    )
+    return config.get_cloud_config_value("block_device_mappings", vm_, __opts__, search_global=True)
 
 
 def _request_eip(interface, vm_):
@@ -1413,10 +1397,7 @@ def _create_eni_if_necessary(interface, vm_):
     """
     Create an Elastic Interface if necessary and return a Network Interface Specification
     """
-    if (
-        "NetworkInterfaceId" in interface
-        and interface["NetworkInterfaceId"] is not None
-    ):
+    if "NetworkInterfaceId" in interface and interface["NetworkInterfaceId"] is not None:
         return {
             "DeviceIndex": interface["DeviceIndex"],
             "NetworkInterfaceId": interface["NetworkInterfaceId"],
@@ -1433,17 +1414,13 @@ def _create_eni_if_necessary(interface, vm_):
     )
 
     if "SecurityGroupId" not in interface and "securitygroupname" in interface:
-        interface["SecurityGroupId"] = _get_securitygroupname_id(
-            interface["securitygroupname"]
-        )
+        interface["SecurityGroupId"] = _get_securitygroupname_id(interface["securitygroupname"])
     if "SubnetId" not in interface and "subnetname" in interface:
         interface["SubnetId"] = _get_subnetname_id(interface["subnetname"])
 
     subnet_id = _get_subnet_id_for_interface(subnet_query, interface)
     if not subnet_id:
-        raise SaltCloudConfigError(
-            "No such subnet <{}>".format(interface.get("SubnetId"))
-        )
+        raise SaltCloudConfigError("No such subnet <{}>".format(interface.get("SubnetId")))
     params = {"SubnetId": subnet_id}
 
     for k in "Description", "PrivateIpAddress", "SecondaryPrivateIpAddressCount":
@@ -1460,9 +1437,7 @@ def _create_eni_if_necessary(interface, vm_):
         for k in ("DeviceIndex", "AssociatePublicIpAddress", "NetworkInterfaceId"):
             if k in interface:
                 params[k] = interface[k]
-        params["DeleteOnTermination"] = interface.get(
-            "delete_interface_on_terminate", True
-        )
+        params["DeleteOnTermination"] = interface.get("delete_interface_on_terminate", True)
         return params
 
     params["Action"] = "CreateNetworkInterface"
@@ -1526,9 +1501,7 @@ def _get_subnet_id_for_interface(subnet_query, interface):
     for subnet_query_result in subnet_query:
         if "item" in subnet_query_result:
             if isinstance(subnet_query_result["item"], dict):
-                subnet_id = _get_subnet_from_subnet_query(
-                    subnet_query_result["item"], interface
-                )
+                subnet_id = _get_subnet_from_subnet_query(subnet_query_result["item"], interface)
                 if subnet_id is not None:
                     return subnet_id
 
@@ -1595,9 +1568,7 @@ def _modify_eni_properties(eni_id, properties=None, vm_=None):
 
     if isinstance(result, dict) and result.get("error"):
         raise SaltCloudException(
-            "Could not change interface <{}> attributes <'{}'>".format(
-                eni_id, properties
-            )
+            f"Could not change interface <{eni_id}> attributes <'{properties}'>"
         )
     else:
         return result
@@ -1654,20 +1625,14 @@ def _update_enis(interfaces, instance, vm_=None):
     query_enis = instance[0]["instancesSet"]["item"]["networkInterfaceSet"]["item"]
     if isinstance(query_enis, list):
         for query_eni in query_enis:
-            instance_enis.append(
-                (query_eni["networkInterfaceId"], query_eni["attachment"])
-            )
+            instance_enis.append((query_eni["networkInterfaceId"], query_eni["attachment"]))
     else:
-        instance_enis.append(
-            (query_enis["networkInterfaceId"], query_enis["attachment"])
-        )
+        instance_enis.append((query_enis["networkInterfaceId"], query_enis["attachment"]))
 
     for eni_id, eni_data in instance_enis:
         delete_on_terminate = True
         if "DeleteOnTermination" in config_enis[eni_data["deviceIndex"]]:
-            delete_on_terminate = config_enis[eni_data["deviceIndex"]][
-                "DeleteOnTermination"
-            ]
+            delete_on_terminate = config_enis[eni_data["deviceIndex"]]["DeleteOnTermination"]
         elif "delete_interface_on_terminate" in config_enis[eni_data["deviceIndex"]]:
             delete_on_terminate = config_enis[eni_data["deviceIndex"]][
                 "delete_interface_on_terminate"
@@ -1677,19 +1642,13 @@ def _update_enis(interfaces, instance, vm_=None):
             "Attachment.AttachmentId": eni_data["attachmentId"],
             "Attachment.DeleteOnTermination": delete_on_terminate,
         }
-        set_eni_attachment_attributes = _modify_eni_properties(
-            eni_id, params_attachment, vm_=vm_
-        )
+        set_eni_attachment_attributes = _modify_eni_properties(eni_id, params_attachment, vm_=vm_)
 
         if "SourceDestCheck" in config_enis[eni_data["deviceIndex"]]:
             params_sourcedest = {
-                "SourceDestCheck.Value": config_enis[eni_data["deviceIndex"]][
-                    "SourceDestCheck"
-                ]
+                "SourceDestCheck.Value": config_enis[eni_data["deviceIndex"]]["SourceDestCheck"]
             }
-            set_eni_sourcedest_property = _modify_eni_properties(
-                eni_id, params_sourcedest, vm_=vm_
-            )
+            set_eni_sourcedest_property = _modify_eni_properties(eni_id, params_sourcedest, vm_=vm_)
 
     return None
 
@@ -1776,9 +1735,7 @@ def request_instance(vm_=None, call=None):
     if call == "function":
         # Technically this function may be called other ways too, but it
         # definitely cannot be called with --function.
-        raise SaltCloudSystemExit(
-            "The request_instance action must be called with -a or --action."
-        )
+        raise SaltCloudSystemExit("The request_instance action must be called with -a or --action.")
 
     location = vm_.get("location", get_location(vm_))
 
@@ -1788,9 +1745,7 @@ def request_instance(vm_=None, call=None):
     if spot_config is not None:
         if "spot_price" not in spot_config:
             raise SaltCloudSystemExit(
-                "Spot instance config for {} requires a spot_price attribute.".format(
-                    vm_["name"]
-                )
+                "Spot instance config for {} requires a spot_price attribute.".format(vm_["name"])
             )
 
         params = {
@@ -1918,9 +1873,7 @@ def request_instance(vm_=None, call=None):
     ex_blockdevicemappings = blockdevicemappings_holder
     if ex_blockdevicemappings:
         params.update(
-            _param_from_config(
-                spot_prefix + "BlockDeviceMapping", ex_blockdevicemappings
-            )
+            _param_from_config(spot_prefix + "BlockDeviceMapping", ex_blockdevicemappings)
         )
 
     network_interfaces = config.get_cloud_config_value(
@@ -1954,21 +1907,13 @@ def request_instance(vm_=None, call=None):
 
     if set_termination_protection is not None:
         if not isinstance(set_termination_protection, bool):
-            raise SaltCloudConfigError(
-                "'termination_protection' should be a boolean value."
-            )
+            raise SaltCloudConfigError("'termination_protection' should be a boolean value.")
         params.update(
-            _param_from_config(
-                spot_prefix + "DisableApiTermination", set_termination_protection
-            )
+            _param_from_config(spot_prefix + "DisableApiTermination", set_termination_protection)
         )
 
-    if set_del_root_vol_on_destroy and not isinstance(
-        set_del_root_vol_on_destroy, bool
-    ):
-        raise SaltCloudConfigError(
-            "'del_root_vol_on_destroy' should be a boolean value."
-        )
+    if set_del_root_vol_on_destroy and not isinstance(set_del_root_vol_on_destroy, bool):
+        raise SaltCloudConfigError("'del_root_vol_on_destroy' should be a boolean value.")
 
     vm_["set_del_root_vol_on_destroy"] = set_del_root_vol_on_destroy
 
@@ -2042,9 +1987,7 @@ def request_instance(vm_=None, call=None):
             else:
                 dev_index = len(dev_list)
                 # Add the device name in since it wasn't already there
-                params[f"{spot_prefix}BlockDeviceMapping.{dev_index}.DeviceName"] = (
-                    rd_name
-                )
+                params[f"{spot_prefix}BlockDeviceMapping.{dev_index}.DeviceName"] = rd_name
 
             # Set the termination value
             termination_key = "{}BlockDeviceMapping.{}.Ebs.DeleteOnTermination".format(
@@ -2058,30 +2001,22 @@ def request_instance(vm_=None, call=None):
                 and dev_index < len(ex_blockdevicemappings)
                 and "Ebs.VolumeType" not in ex_blockdevicemappings[dev_index]
             ):
-                type_key = "{}BlockDeviceMapping.{}.Ebs.VolumeType".format(
-                    spot_prefix, dev_index
-                )
+                type_key = f"{spot_prefix}BlockDeviceMapping.{dev_index}.Ebs.VolumeType"
                 params[type_key] = rd_type
 
     set_del_all_vols_on_destroy = config.get_cloud_config_value(
         "del_all_vols_on_destroy", vm_, __opts__, search_global=False, default=False
     )
 
-    if set_del_all_vols_on_destroy and not isinstance(
-        set_del_all_vols_on_destroy, bool
-    ):
-        raise SaltCloudConfigError(
-            "'del_all_vols_on_destroy' should be a boolean value."
-        )
+    if set_del_all_vols_on_destroy and not isinstance(set_del_all_vols_on_destroy, bool):
+        raise SaltCloudConfigError("'del_all_vols_on_destroy' should be a boolean value.")
 
     __utils__["cloud.fire_event"](
         "event",
         "requesting instance",
         "salt/cloud/{}/requesting".format(vm_["name"]),
         args={
-            "kwargs": __utils__["cloud.filter_event"](
-                "requesting", params, list(params)
-            ),
+            "kwargs": __utils__["cloud.filter_event"]("requesting", params, list(params)),
             "location": location,
         },
         sock_dir=__opts__["sock_dir"],
@@ -2151,8 +2086,7 @@ def request_instance(vm_=None, call=None):
             if state in ["cancelled", "failed", "closed"]:
                 # Request will never be active, fail
                 log.error(
-                    "Spot instance request resulted in state '{0}'. "
-                    "Nothing else we can do here."
+                    "Spot instance request resulted in state '{0}'. " "Nothing else we can do here."
                 )
                 return False
 
@@ -2219,9 +2153,7 @@ def query_instance(vm_=None, call=None):
     if call == "function":
         # Technically this function may be called other ways too, but it
         # definitely cannot be called with --function.
-        raise SaltCloudSystemExit(
-            "The query_instance action must be called with -a or --action."
-        )
+        raise SaltCloudSystemExit("The query_instance action must be called with -a or --action.")
 
     instance_id = vm_["instance_id"]
     location = vm_.get("location", get_location(vm_))
@@ -2259,9 +2191,7 @@ def query_instance(vm_=None, call=None):
                 data["error"],
             )
         elif isinstance(data, list) and not data:
-            log.warning(
-                "Query returned an empty list. %s attempts remaining.", attempts
-            )
+            log.warning("Query returned an empty list. %s attempts remaining.", attempts)
         else:
             break
 
@@ -2269,14 +2199,10 @@ def query_instance(vm_=None, call=None):
         attempts += 1
         continue
     else:
-        raise SaltCloudSystemExit(
-            "An error occurred while creating VM: {}".format(data["error"])
-        )
+        raise SaltCloudSystemExit("An error occurred while creating VM: {}".format(data["error"]))
 
     def __query_ip_address(params, url):  # pylint: disable=W0613
-        data = aws.query(
-            params, location=location, provider=provider, opts=__opts__, sigver="4"
-        )
+        data = aws.query(params, location=location, provider=provider, opts=__opts__, sigver="4")
         if not data:
             log.error("There was an error while querying EC2. Empty response")
             # Trigger a failure in the wait for IP function
@@ -2380,18 +2306,14 @@ def wait_for_instance(
         username = config.get_cloud_config_value(
             "win_username", vm_, __opts__, default="Administrator"
         )
-        win_passwd = config.get_cloud_config_value(
-            "win_password", vm_, __opts__, default=""
-        )
+        win_passwd = config.get_cloud_config_value("win_password", vm_, __opts__, default="")
         win_deploy_auth_retries = config.get_cloud_config_value(
             "win_deploy_auth_retries", vm_, __opts__, default=10
         )
         win_deploy_auth_retry_delay = config.get_cloud_config_value(
             "win_deploy_auth_retry_delay", vm_, __opts__, default=1
         )
-        use_winrm = config.get_cloud_config_value(
-            "use_winrm", vm_, __opts__, default=False
-        )
+        use_winrm = config.get_cloud_config_value("use_winrm", vm_, __opts__, default=False)
         winrm_verify_ssl = config.get_cloud_config_value(
             "winrm_verify_ssl", vm_, __opts__, default=True
         )
@@ -2421,9 +2343,7 @@ def wait_for_instance(
                     break
 
         # SMB used whether psexec or winrm
-        if not salt.utils.cloud.wait_for_port(
-            ip_address, port=445, timeout=ssh_connect_timeout
-        ):
+        if not salt.utils.cloud.wait_for_port(ip_address, port=445, timeout=ssh_connect_timeout):
             raise SaltCloudSystemExit("Failed to connect to remote windows host")
 
         # If not using winrm keep same psexec behavior
@@ -2446,17 +2366,13 @@ def wait_for_instance(
         else:
 
             # Default HTTPS port can be changed in cloud configuration
-            winrm_port = config.get_cloud_config_value(
-                "winrm_port", vm_, __opts__, default=5986
-            )
+            winrm_port = config.get_cloud_config_value("winrm_port", vm_, __opts__, default=5986)
 
             # Wait for winrm port to be available
             if not salt.utils.cloud.wait_for_port(
                 ip_address, port=winrm_port, timeout=ssh_connect_timeout
             ):
-                raise SaltCloudSystemExit(
-                    "Failed to connect to remote windows host (winrm)"
-                )
+                raise SaltCloudSystemExit("Failed to connect to remote windows host (winrm)")
 
             log.debug("Trying to authenticate via Winrm using pywinrm")
 
@@ -2468,9 +2384,7 @@ def wait_for_instance(
                 timeout=ssh_connect_timeout,
                 verify=winrm_verify_ssl,
             ):
-                raise SaltCloudSystemExit(
-                    "Failed to authenticate against remote windows host"
-                )
+                raise SaltCloudSystemExit("Failed to authenticate against remote windows host")
 
     elif salt.utils.cloud.wait_for_port(
         ip_address,
@@ -2555,21 +2469,16 @@ def wait_for_instance(
 def _validate_key_path_and_mode(key_filename):
     if key_filename is None:
         raise SaltCloudSystemExit(
-            "The required 'private_key' configuration setting is missing from the "
-            "'ec2' driver."
+            "The required 'private_key' configuration setting is missing from the " "'ec2' driver."
         )
 
     if not os.path.exists(key_filename):
-        raise SaltCloudSystemExit(
-            f"The EC2 key file '{key_filename}' does not exist.\n"
-        )
+        raise SaltCloudSystemExit(f"The EC2 key file '{key_filename}' does not exist.\n")
 
     key_mode = stat.S_IMODE(os.stat(key_filename).st_mode)
     if key_mode not in (0o400, 0o600):
         raise SaltCloudSystemExit(
-            "The EC2 key file '{}' needs to be set to mode 0400 or 0600.\n".format(
-                key_filename
-            )
+            f"The EC2 key file '{key_filename}' needs to be set to mode 0400 or 0600.\n"
         )
 
     return True
@@ -2597,9 +2506,7 @@ def create(vm_=None, call=None):
 
     # Check for private_key and keyfile name for bootstrapping new instances
     deploy = config.get_cloud_config_value("deploy", vm_, __opts__, default=True)
-    win_password = config.get_cloud_config_value(
-        "win_password", vm_, __opts__, default=""
-    )
+    win_password = config.get_cloud_config_value("win_password", vm_, __opts__, default="")
     key_filename = config.get_cloud_config_value(
         "private_key", vm_, __opts__, search_global=False, default=None
     )
@@ -2618,9 +2525,7 @@ def create(vm_=None, call=None):
         sock_dir=__opts__["sock_dir"],
         transport=__opts__["transport"],
     )
-    __utils__["cloud.cachedir_index_add"](
-        vm_["name"], vm_["profile"], "ec2", vm_["driver"]
-    )
+    __utils__["cloud.cachedir_index_add"](vm_["name"], vm_["profile"], "ec2", vm_["driver"])
 
     vm_["key_filename"] = key_filename
     # wait_for_instance requires private_key
@@ -2661,8 +2566,7 @@ def create(vm_=None, call=None):
         # and then fire off the request for it
         if keyname(vm_) is None:
             raise SaltCloudSystemExit(
-                "The required 'keyname' configuration setting is missing from the "
-                "'ec2' driver."
+                "The required 'keyname' configuration setting is missing from the " "'ec2' driver."
             )
 
         data, vm_ = request_instance(vm_, location)
@@ -2809,9 +2713,7 @@ def create(vm_=None, call=None):
     # 1. VM config
     # 2. Profile config
     # 3. Global configuration
-    volumes = config.get_cloud_config_value(
-        "volumes", vm_, __opts__, search_global=True
-    )
+    volumes = config.get_cloud_config_value("volumes", vm_, __opts__, search_global=True)
     if volumes:
         __utils__["cloud.fire_event"](
             "event",
@@ -2912,9 +2814,9 @@ def create(vm_=None, call=None):
                 ):
                     ex_blockdevicetags[blockitem["deviceName"]]["Name"] = vm_["name"]
                 if blockitem["deviceName"] in ex_blockdevicetags:
-                    block_device_volume_id_map[
-                        blockitem[ret["rootDeviceType"]]["volumeId"]
-                    ] = ex_blockdevicetags[blockitem["deviceName"]]
+                    block_device_volume_id_map[blockitem[ret["rootDeviceType"]]["volumeId"]] = (
+                        ex_blockdevicetags[blockitem["deviceName"]]
+                    )
 
     if block_device_volume_id_map:
 
@@ -2989,8 +2891,7 @@ def create_attach_volumes(name, kwargs, call=None, wait_to_finish=True):
             volume_dict["size"] = volume["size"]
         else:
             raise SaltCloudConfigError(
-                "Cannot create volume.  Please define one of 'volume_id', "
-                "'snapshot', or 'size'"
+                "Cannot create volume.  Please define one of 'volume_id', " "'snapshot', or 'size'"
             )
 
         if "tags" in volume:
@@ -3075,9 +2976,7 @@ def start(name, call=None):
     Start a node
     """
     if call != "action":
-        raise SaltCloudSystemExit(
-            "The start action must be called with -a or --action."
-        )
+        raise SaltCloudSystemExit("The start action must be called with -a or --action.")
 
     log.info("Starting node %s", name)
 
@@ -3276,9 +3175,7 @@ def del_tags(
         kwargs = {}
 
     if "tags" not in kwargs:
-        raise SaltCloudSystemExit(
-            "A tag or tags must be specified using tags=list,of,tags"
-        )
+        raise SaltCloudSystemExit("A tag or tags must be specified using tags=list,of,tags")
 
     if not name and "resource_id" in kwargs:
         instance_id = kwargs["resource_id"]
@@ -3318,9 +3215,7 @@ def rename(name, kwargs, call=None):
         salt-cloud -a rename mymachine newname=yourmachine
     """
     if call != "action":
-        raise SaltCloudSystemExit(
-            "The rename action must be called with -a or --action."
-        )
+        raise SaltCloudSystemExit("The rename action must be called with -a or --action.")
 
     log.info("Renaming %s to %s", name, kwargs["newname"])
 
@@ -3347,9 +3242,7 @@ def destroy(name, call=None):
     node_metadata = _get_node(name)
     instance_id = node_metadata["instanceId"]
     sir_id = node_metadata.get("spotInstanceRequestId")
-    protected = show_term_protect(
-        name=name, instance_id=instance_id, call="action", quiet=True
-    )
+    protected = show_term_protect(name=name, instance_id=instance_id, call="action", quiet=True)
 
     __utils__["cloud.fire_event"](
         "event",
@@ -3377,18 +3270,14 @@ def destroy(name, call=None):
     if rename_on_destroy is not False:
         newname = f"{name}-DEL{uuid.uuid4().hex}"
         rename(name, kwargs={"newname": newname}, call="action")
-        log.info(
-            "Machine will be identified as %s until it has been cleaned up.", newname
-        )
+        log.info("Machine will be identified as %s until it has been cleaned up.", newname)
         ret["newname"] = newname
 
     params = {"Action": "TerminateInstances", "InstanceId.1": instance_id}
 
     location = get_location()
     provider = get_provider()
-    result = aws.query(
-        params, location=location, provider=provider, opts=__opts__, sigver="4"
-    )
+    result = aws.query(params, location=location, provider=provider, opts=__opts__, sigver="4")
 
     log.info(result)
     ret.update(result[0])
@@ -3400,9 +3289,7 @@ def destroy(name, call=None):
             "Action": "CancelSpotInstanceRequests",
             "SpotInstanceRequestId.1": sir_id,
         }
-        result = aws.query(
-            params, location=location, provider=provider, opts=__opts__, sigver="4"
-        )
+        result = aws.query(params, location=location, provider=provider, opts=__opts__, sigver="4")
         ret["spotInstance"] = result[0]
 
     __utils__["cloud.fire_event"](
@@ -3457,9 +3344,7 @@ def show_image(kwargs, call=None):
     Show the details from EC2 concerning an AMI
     """
     if call != "function":
-        raise SaltCloudSystemExit(
-            "The show_image action must be called with -f or --function."
-        )
+        raise SaltCloudSystemExit("The show_image action must be called with -f or --function.")
 
     params = {"ImageId.1": kwargs["image"], "Action": "DescribeImages"}
     result = aws.query(
@@ -3622,9 +3507,7 @@ def _list_nodes_full(location=None):
         provider = comps[0]
 
     params = {"Action": "DescribeInstances"}
-    instances = aws.query(
-        params, location=location, provider=provider, opts=__opts__, sigver="4"
-    )
+    instances = aws.query(params, location=location, provider=provider, opts=__opts__, sigver="4")
     if "error" in instances:
         raise SaltCloudSystemExit(
             "An error occurred while listing nodes: {}".format(
@@ -3684,9 +3567,7 @@ def list_nodes(call=None):
     Return a list of the VMs that are on the provider
     """
     if call == "action":
-        raise SaltCloudSystemExit(
-            "The list_nodes function must be called with -f or --function."
-        )
+        raise SaltCloudSystemExit("The list_nodes function must be called with -f or --function.")
 
     ret = {}
     nodes = list_nodes_full(get_location())
@@ -3776,8 +3657,7 @@ def show_detailed_monitoring(name=None, instance_id=None, call=None, quiet=False
 
     if not name and not instance_id:
         raise SaltCloudSystemExit(
-            "The show_detailed_monitoring action must be provided with a name or"
-            " instance ID"
+            "The show_detailed_monitoring action must be provided with a name or" " instance ID"
         )
     matched = _get_node(name=name, instance_id=instance_id, location=location)
     log.log(
@@ -4094,8 +3974,7 @@ def register_image(kwargs=None, call=None):
     if not block_device_mapping:
         if "snapshot_id" not in kwargs:
             log.error(
-                "snapshot_id or block_device_mapping must be specified to register an"
-                " image."
+                "snapshot_id or block_device_mapping must be specified to register an" " image."
             )
             return False
         if "root_device_name" not in kwargs:
@@ -4328,9 +4207,7 @@ def attach_volume(name=None, kwargs=None, instance_id=None, call=None):
     Attach a volume to an instance
     """
     if call != "action":
-        raise SaltCloudSystemExit(
-            "The attach_volume action must be called with -a or --action."
-        )
+        raise SaltCloudSystemExit("The attach_volume action must be called with -a or --action.")
 
     if not kwargs:
         kwargs = {}
@@ -4370,9 +4247,7 @@ def attach_volume(name=None, kwargs=None, instance_id=None, call=None):
         timeout=config.get_cloud_config_value(
             "wait_for_ip_timeout", vm_, __opts__, default=10 * 60
         ),
-        interval=config.get_cloud_config_value(
-            "wait_for_ip_interval", vm_, __opts__, default=10
-        ),
+        interval=config.get_cloud_config_value("wait_for_ip_interval", vm_, __opts__, default=10),
         interval_multiplier=config.get_cloud_config_value(
             "wait_for_ip_interval_multiplier", vm_, __opts__, default=1
         ),
@@ -4398,9 +4273,7 @@ def detach_volume(name=None, kwargs=None, instance_id=None, call=None):
     Detach a volume from an instance
     """
     if call != "action":
-        raise SaltCloudSystemExit(
-            "The detach_volume action must be called with -a or --action."
-        )
+        raise SaltCloudSystemExit("The detach_volume action must be called with -a or --action.")
 
     if not kwargs:
         kwargs = {}
@@ -4542,6 +4415,7 @@ def import_keypair(kwargs=None, call=None):
     params = {"Action": "ImportKeyPair", "KeyName": kwargs["keyname"]}
 
     public_key_file = kwargs["file"]
+    public_key = None
 
     if os.path.exists(public_key_file):
         with salt.utils.files.fopen(public_key_file, "r") as fh_:
@@ -4780,9 +4654,7 @@ def describe_snapshots(kwargs=None, call=None):
     TODO: Add all of the filters.
     """
     if call != "function":
-        log.error(
-            "The describe_snapshot function must be called with -f or --function."
-        )
+        log.error("The describe_snapshot function must be called with -f or --function.")
         return False
 
     params = {"Action": "DescribeSnapshots"}
@@ -4929,7 +4801,7 @@ def get_password_data(
     for item in data:
         ret[next(iter(item.keys()))] = next(iter(item.values()))
 
-    if not salt.crypt.HAS_M2 and not salt.crypt.HAS_CRYPTO:
+    if not salt.crypt.HAS_CRYPTOGRAPHY:
         if "key" in kwargs or "key_file" in kwargs:
             log.warning("No crypto library is installed, can not decrypt password")
         return ret
@@ -5135,7 +5007,7 @@ def ssm_create_association(name=None, kwargs=None, instance_id=None, call=None):
     """
     Associates the specified SSM document with the specified instance
 
-    http://docs.aws.amazon.com/ssm/latest/APIReference/API_CreateAssociation.html
+    https://docs.aws.amazon.com/systems-manager/latest/APIReference/API_CreateAssociation.html
 
     CLI Examples:
 
@@ -5189,7 +5061,7 @@ def ssm_describe_association(name=None, kwargs=None, instance_id=None, call=None
     """
     Describes the associations for the specified SSM document or instance.
 
-    http://docs.aws.amazon.com/ssm/latest/APIReference/API_DescribeAssociation.html
+    https://docs.aws.amazon.com/systems-manager/latest/APIReference/API_DescribeAssociation.html
 
     CLI Examples:
 

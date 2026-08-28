@@ -2,6 +2,37 @@
 
 Salt extension providing cloud provider drivers (e.g. EC2) for salt-cloud
 
+## Available drivers
+
+* **ec2**: Provision and manage Amazon EC2 instances via `salt-cloud`. This
+  driver was extracted from Salt core, where it was removed in Salt 3008 as
+  part of the community modules migration.
+
+## Installation
+
+```bash
+pip install saltext.cloud
+```
+
+## Usage
+
+Once installed, the `ec2` driver is automatically available to `salt-cloud`,
+configured the same way as it always has been, e.g. in
+`/etc/salt/cloud.providers.d/ec2.conf`:
+
+```yaml
+my-ec2-config:
+  driver: ec2
+  id: 'use-instance-role-credentials'
+  key: 'use-instance-role-credentials'
+  keyname: my_test_key
+  private_key: /etc/salt/my_test_key.pem
+  location: us-east-1
+```
+
+See the [Getting Started With AWS EC2](https://docs.saltproject.io/en/latest/topics/cloud/aws.html)
+guide for full configuration details.
+
 ## Security
 
 If you discover a security vulnerability, please refer

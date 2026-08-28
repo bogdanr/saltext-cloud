@@ -1,14 +1,13 @@
+from unittest.mock import PropertyMock
+from unittest.mock import patch
+
 import pytest
-
 import salt.crypt
+import salt.exceptions
 import salt.utils.files
-from salt.cloud.clouds import ec2
 from salt.exceptions import SaltCloudSystemExit
-from tests.support.mock import PropertyMock, patch
 
-pytestmark = [
-    pytest.mark.windows_whitelisted,
-]
+from saltext.cloud.clouds import ec2
 
 
 @pytest.fixture
@@ -189,9 +188,7 @@ def test__validate_key_path_and_mode():
             ec2._validate_key_path_and_mode("key_file")
 
 
-@pytest.mark.skipif(
-    not salt.crypt.HAS_M2 and not salt.crypt.HAS_CRYPTO, reason="Needs crypto library"
-)
+@pytest.mark.skipif(not salt.crypt.HAS_CRYPTOGRAPHY, reason="Needs crypto library")
 def test_get_password_data(tmp_path):
     key_file = str(tmp_path / "keyfile.pem")
 
@@ -233,14 +230,10 @@ def test_get_password_data(tmp_path):
         "-----END RSA PRIVATE KEY-----"
     )
 
-    with patch(
-        "salt.cloud.clouds.ec2._get_node", return_value={"instanceId": "i-abcdef"}
-    ):
-        with patch("salt.cloud.clouds.ec2.get_location", return_value="us-west2"):
-            with patch("salt.cloud.clouds.ec2.get_provider", return_value="ec2"):
-                with patch(
-                    "salt.utils.aws.query", return_value=[{"passwordData": pass_data}]
-                ):
+    with patch("saltext.cloud.clouds.ec2._get_node", return_value={"instanceId": "i-abcdef"}):
+        with patch("saltext.cloud.clouds.ec2.get_location", return_value="us-west2"):
+            with patch("saltext.cloud.clouds.ec2.get_provider", return_value="ec2"):
+                with patch("salt.utils.aws.query", return_value=[{"passwordData": pass_data}]):
                     with salt.utils.files.fopen(key_file, "w") as fp:
                         fp.write(privkey_data)
                     ret = ec2.get_password_data(
@@ -256,20 +249,20 @@ def test_get_imageid():
     """
     vm = {}
     ami = "ami-1234"
-    with patch("salt.cloud.clouds.ec2.get_location", return_value="us-west2"):
-        with patch("salt.cloud.clouds.ec2.get_provider", return_value="ec2"):
+    with patch("saltext.cloud.clouds.ec2.get_location", return_value="us-west2"):
+        with patch("saltext.cloud.clouds.ec2.get_provider", return_value="ec2"):
             with patch(
-                "salt.cloud.clouds.ec2.aws.query", return_value=[{"imageId": ami}]
+                "saltext.cloud.clouds.ec2.aws.query", return_value=[{"imageId": ami}]
             ) as aws_query:
                 with patch(
-                    "salt.cloud.clouds.ec2.config.get_cloud_config_value",
+                    "saltext.cloud.clouds.ec2.config.get_cloud_config_value",
                     return_value="test/*",
                 ):
                     # test image filter
                     assert ec2.get_imageid(vm) == ami
 
                 with patch(
-                    "salt.cloud.clouds.ec2.config.get_cloud_config_value",
+                    "saltext.cloud.clouds.ec2.config.get_cloud_config_value",
                     return_value=ami,
                 ):
                     # test ami-image
@@ -292,27 +285,21 @@ def test_termination_protection():
         + [set_del_root_vol_on_destroy, termination_protection]
     )
     with patch(
-        "salt.cloud.clouds.ec2.config.get_cloud_config_value",
+        "saltext.cloud.clouds.ec2.config.get_cloud_config_value",
         side_effect=config_side_effect,
     ):
-        with patch("salt.cloud.clouds.ec2.get_location", return_value="us-west2"):
-            with patch(
-                "salt.cloud.clouds.ec2.get_availability_zone", return_value=None
-            ):
-                with patch("salt.cloud.clouds.ec2.get_provider", return_value="ec2"):
-                    with patch(
-                        "salt.cloud.clouds.ec2.get_spot_config", return_value=None
-                    ):
+        with patch("saltext.cloud.clouds.ec2.get_location", return_value="us-west2"):
+            with patch("saltext.cloud.clouds.ec2.get_availability_zone", return_value=None):
+                with patch("saltext.cloud.clouds.ec2.get_provider", return_value="ec2"):
+                    with patch("saltext.cloud.clouds.ec2.get_spot_config", return_value=None):
                         with patch(
-                            "salt.cloud.clouds.ec2._param_from_config"
+                            "saltext.cloud.clouds.ec2._param_from_config"
                         ) as _param_from_config:
                             with patch(
-                                "salt.cloud.clouds.ec2.securitygroupid",
+                                "saltext.cloud.clouds.ec2.securitygroupid",
                                 return_value=None,
                             ):
-                                with pytest.raises(
-                                    salt.exceptions.SaltCloudConfigError
-                                ):
+                                with pytest.raises(salt.exceptions.SaltCloudConfigError):
                                     ec2.request_instance(vm)
                                     _param_from_config.assert_called_once_with(
                                         "DisableApiTermination", True
@@ -325,24 +312,16 @@ def test_termination_protection_exception():
     """
     vm = {"name": "taco"}
     termination_protection = "not a bool"
-    config_side_effect = (
-        [None] * 2 + ["test/*"] + [None] * 14 + [termination_protection]
-    )
+    config_side_effect = [None] * 2 + ["test/*"] + [None] * 14 + [termination_protection]
     with patch(
-        "salt.cloud.clouds.ec2.config.get_cloud_config_value",
+        "saltext.cloud.clouds.ec2.config.get_cloud_config_value",
         side_effect=config_side_effect,
     ):
-        with patch("salt.cloud.clouds.ec2.get_location", return_value="us-west2"):
-            with patch(
-                "salt.cloud.clouds.ec2.get_availability_zone", return_value=None
-            ):
-                with patch("salt.cloud.clouds.ec2.get_provider", return_value="ec2"):
-                    with patch(
-                        "salt.cloud.clouds.ec2.get_spot_config", return_value=None
-                    ):
-                        with patch(
-                            "salt.cloud.clouds.ec2.securitygroupid", return_value=None
-                        ):
+        with patch("saltext.cloud.clouds.ec2.get_location", return_value="us-west2"):
+            with patch("saltext.cloud.clouds.ec2.get_availability_zone", return_value=None):
+                with patch("saltext.cloud.clouds.ec2.get_provider", return_value="ec2"):
+                    with patch("saltext.cloud.clouds.ec2.get_spot_config", return_value=None):
+                        with patch("saltext.cloud.clouds.ec2.securitygroupid", return_value=None):
                             with pytest.raises(salt.exceptions.SaltCloudConfigError):
                                 ec2.request_instance(vm)
 
@@ -351,7 +330,6 @@ def test_get_subnetname_id():
     """
     test querying subnetid function
     """
-    vm = {}
     subnetid = "subnet-5678"
     subnetname = "valid-subnet-with-name"
     aws_query_return_value = [
@@ -361,13 +339,11 @@ def test_get_subnetname_id():
             "tagSet": {"item": {"key": "Name", "value": subnetname}},
         },
     ]
-    with patch(
-        "salt.cloud.clouds.ec2.config.get_cloud_config_value", return_value=subnetname
-    ):
-        with patch("salt.cloud.clouds.ec2.get_location", return_value="us-west-2"):
-            with patch("salt.cloud.clouds.ec2.get_provider", return_value="ec2"):
+    with patch("saltext.cloud.clouds.ec2.config.get_cloud_config_value", return_value=subnetname):
+        with patch("saltext.cloud.clouds.ec2.get_location", return_value="us-west-2"):
+            with patch("saltext.cloud.clouds.ec2.get_provider", return_value="ec2"):
                 with patch(
-                    "salt.cloud.clouds.ec2.aws.query",
+                    "saltext.cloud.clouds.ec2.aws.query",
                     return_value=aws_query_return_value,
                 ):
                     # test for returns that include subnets with missing Name tags, see Issue 44330

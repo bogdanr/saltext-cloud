@@ -38,6 +38,7 @@ requires-python = ">= 3.10"
 dynamic = ["version"]
 dependencies = [
     "salt>=3008",
+    "requests",
 ]
 
 [project.readme]
@@ -195,4 +196,5 @@ builtins = [
     "__reg__",
     "__executors__",
     "__events__",
+    "__utils__",
 ]
